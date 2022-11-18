@@ -8,6 +8,6 @@ Now, it's available to anyone who wolud like to try it!
 
 # Contents
 
-- <a href="/contents/pre-requirements.md" target="_blank">Pre-requirements</a>
-- <a href="/contents/demo-workflow.md" target="_blank">Demo workflow</a>
+- [Pre-requirements](/contents/pre-requirements.md)
+- [Demo workflow](/contents/demo-workflow.md)
 - 
