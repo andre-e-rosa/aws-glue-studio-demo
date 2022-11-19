@@ -1,0 +1,614 @@
+AWSTemplateFormatVersion: 2010-09-09
+### Summary
+#
+# Author......: Andre Rosa (anrosa@)
+# Date........: 02-November-2022
+# Version.....: 1.2
+#
+# This CF will build a base Infrastructure for Glue Studoo DEMO:
+# - VPC
+# - VPC Gateway Endpoint for S3
+# - VPC Interface Endpoint for AWS Glue
+# - NAT Gateway
+# - S3 buckets (Temp bucket and Data Lake bucket)
+# - EC2 with PSQL client (PSQL host)
+# - Redshift cluster
+# /*- IAM Role for Redshift and DMS service, to access S3 and Glue resources*/
+# - IAM Role for Redshift, to access S3 and Glue resources
+# - IAM Role for EC2 Instance Profile
+# - SSM Session Manager Config
+# - Glue databases and a connection
+#
+# IMPORTANT!
+#
+# This CF template must be provisioned on Region "us-west-2" (Oregon)
+# ******************************************************************************
+# Version 1.2 (02-November-2022):
+# ------------------------------
+# Changes in this version:
+# => Removed paramenter "RSSnapshotOwner"
+# => Removed parameter "RSSnapshotIdentifier"
+# => Modified Redshift cluster resource "LabRedshiftCluster", to launch an empty cluster 
+# => Added Managed IAM Policy "arn:aws:iam::aws:policy/AmazonS3FullAccess" to IAM ROle resource "LabEC2Role"
+# => Adjusted "User Data" shell script on EC2 instance resource "LabHost", to load data from New York taxi rides into Redshift cluster
+# ******************************************************************************
+# Version 1.1 (08-October-2022):
+# ------------------------------
+# Changes in this version:
+# => Changing name of IAM Role resource "LabGlueRole" to pattern "AWSGlueServiceRole-Lab-{AWS::AccountId}-{AWS::Region}",
+#    for it to be used correctly by AWS Glue Studio
+# => Adding paramenter "RSSnapshotOwner", refeerncing the AWS account used to create the cluster snapshot, 
+#    to be able to retrieve it from another AWS account.
+# => Adding property "OwnerAccount" for creation of resource "LabRedshiftCluster",
+#    referencing the value of paramter "RSSnapshotOwner".
+# ******************************************************************************
+# Version 1.0 (12-March-2022):
+# ----------------------------
+# first release
+# ******************************************************************************
+###
+Description: >-
+  DEMO stack for AWS Glue Studio, intended to extract data from a Redshift cluster and load into S3 (Data Lake)
+Parameters:
+  LabVPCCIDR:
+    Description: CIDR Block for Lab VPC
+    Type: String
+    Default: 10.1.0.0/16
+    AllowedValues:
+      - 10.1.0.0/16
+  
+  LabVPCPublicSubnetCIDR:
+    Description: Lab VPC Public Subnet
+    Type: String
+    Default: 10.1.10.0/24
+    AllowedValues:
+      - 10.1.10.0/24
+
+  LabVPCPrivateSubnetCIDR1:
+    Description: Lab VPC Private Subnet 1
+    Type: String
+    Default: 10.1.20.0/24
+    AllowedValues:
+      - 10.1.20.0/24
+  
+  CustAMIId:
+    Type: String
+    Default: ami-0dc8f589abe99f538
+    AllowedValues:
+      - ami-0dc8f589abe99f538
+  
+  RSClusterName:
+    Description: The name of Redshift cluster being created
+    Type: String
+    Default: rsclusternytaxi
+    AllowedPattern: '([a-z])+'
+  
+  DatabaseNameRS:
+    Description: The name of the first database to be created when the cluster is created
+    Type: String
+    Default: dbdw
+    AllowedPattern: '([a-z]|[0-9])+'
+  
+  ClusterType:
+    Description: The type of cluster
+    Type: String
+    Default: multi-node
+    AllowedValues:
+      - single-node
+      - multi-node
+  
+  NumberOfNodes:
+    Description: >-
+      The number of compute nodes in the cluster. For multi-node clusters, the
+      NumberOfNodes parameter must be greater than 1
+    Type: Number
+    Default: '2'
+  
+  NodeType:
+    Description: The type of node to be provisioned
+    Type: String
+    Default: dc2.large
+    AllowedValues:
+      - dc2.large
+  
+  MasterUsernameRS:
+    Description: >-
+      The user name that is associated with the master user account for the
+      cluster that is being created
+    Type: String
+    Default: awsuser
+    AllowedPattern: '([a-z])([a-z]|[0-9])*'
+  
+  MasterUserPasswordRS:
+    Description: >-
+      The password that is associated with the master user account for the
+      cluster that is being created.
+    Type: String
+    Default: RedSh!ft#123
+    NoEcho: 'true'
+  
+  PortNumber:
+    Description: The port number on which the cluster accepts incoming connections.
+    Type: Number
+    Default: '5439'
+  
+  GlueDATechDBName:
+    Description: The name of the Glue Data Catalog database for Redshift tables.
+    Type: String
+    AllowedPattern: '([ \t\n\x0B\f\r])*|([a-z])([\-]|[a-z]|[\-]|[0-9])*'
+    ConstraintDescription: must start with a-z and contain only a-z or 0-9 or hyphen (-).
+    Default: 'datechdb'
+    
+  GlueSpectrumDBName:
+    Description: The name of the Glue Data Catalog database for Data Lake tables.
+    Type: String
+    AllowedPattern: '([ \t\n\x0B\f\r])*|([a-z])([\-]|[a-z]|[\-]|[0-9])*'
+    ConstraintDescription: must start with a-z and contain only a-z or 0-9 or hyphen (-).
+    Default: 'spectrumdb'
+
+  GlueRedshiftConnectionName:
+    Description: The name of the Glue Data Connection for Redshift.
+    Type: String
+    AllowedPattern: '([ \t\n\x0B\f\r])*|([a-z])([\-]|[a-z]|[\-]|[0-9])*'
+    ConstraintDescription: must start with a-z and contain only a-z or 0-9 or hyphen (-).
+    Default: 'redshift-ny-taxi'
+
+Resources:
+  
+  #---------- IAM ---------------
+  LabGlueRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Join [ '-', ['AWSGlueServiceRole', 'Lab', !Ref "AWS::AccountId", !Ref "AWS::Region"]]
+      AssumeRolePolicyDocument:
+        Statement:
+          - Sid: ''
+            Effect: Allow
+            Principal:
+              Service: glue.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonS3FullAccess'
+        - 'arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole'
+        - 'arn:aws:iam::aws:policy/AmazonRedshiftFullAccess'
+      Path: /
+  
+  LabRSRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Join [ '-', ['LabRSRole', !Ref "AWS::AccountId", !Ref "AWS::Region"]]
+      AssumeRolePolicyDocument:
+        Statement:
+          - Sid: '1'
+            Effect: Allow
+            Principal:
+              Service: redshift.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonS3FullAccess'
+        - 'arn:aws:iam::aws:policy/AWSGlueConsoleFullAccess'
+      Path: /
+  
+  LabEC2Role:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Join [ '-', ['LabEC2Role', !Ref "AWS::AccountId", !Ref "AWS::Region"]]
+      AssumeRolePolicyDocument:
+        Statement:
+          - Sid: ''
+            Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AmazonS3FullAccess'
+      Path: /
+  
+  LabEC2RolePolicy:
+    Type: 'AWS::IAM::Policy'
+    Properties: 
+      PolicyName: SessionManagerPermissionsPolicy
+      PolicyDocument: 
+        Statement: 
+          - Effect: Allow
+            Action:
+              - 'ssm:UpdateInstanceInformation'
+              - 'ssmmessages:CreateControlChannel'
+              - 'ssmmessages:CreateDataChannel'
+              - 'ssmmessages:OpenControlChannel'
+              - 'ssmmessages:OpenDataChannel'
+            Resource: '*'
+          - Effect: Allow
+            Action: s3:GetEncryptionConfiguration
+            Resource: '*'         
+      Roles: 
+        - !Ref LabEC2Role
+  
+  LabEC2InstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties: 
+      Path: /
+      Roles: 
+        - !Ref LabEC2Role
+  
+  #----------- S3 ---------------
+  TempS3Bucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Join [ '-', ['temp-bucket', !Ref "AWS::AccountId", !Ref "AWS::Region"]]
+  
+  DatalakeS3Bucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: !Join [ '-', ['datalake-bucket', !Ref "AWS::AccountId", !Ref "AWS::Region"]]
+  
+  #----------- SSM ---------------
+  SessionPreferencesDocument:
+    Type: 'AWS::SSM::Document'
+    Properties:
+      Name: SSM-SessionManagerRunShell-Custom
+      DocumentType: Session
+      DocumentFormat: YAML
+      Content:
+        schemaVersion: '1.0'
+        description: Document to hold regional settings for Session Manager
+        sessionType: Standard_Stream
+        inputs:
+          s3BucketName: ''
+          s3KeyPrefix: ''
+          s3EncryptionEnabled: true
+          cloudWatchLogGroupName: ''
+          cloudWatchEncryptionEnabled: true
+          cloudWatchStreamingEnabled: true
+          kmsKeyId: ''
+          runAsEnabled: false
+          runAsDefaultUser: ''
+          idleSessionTimeout: '60'
+          shellProfile:
+            windows: ''
+            linux: 'sudo su - ec2-user'
+  
+  #---------- VPC ---------------
+  LabVPC:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: !Ref LabVPCCIDR
+      EnableDnsSupport: 'true'
+      EnableDnsHostnames: 'true'
+      Tags:
+        - Key: VPC
+          Value: DATech-VPC
+        - Key: Name
+          Value: DATech-VPC
+  
+  LabIGW:
+    Type: 'AWS::EC2::InternetGateway'
+    DependsOn: LabVPC
+  
+  LabVPCAttachGateway:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      VpcId: !Ref LabVPC
+      InternetGatewayId: !Ref LabIGW
+  
+  LabPubSubnet:
+    Type: 'AWS::EC2::Subnet'
+    DependsOn: LabVPCAttachGateway
+    Properties:
+      VpcId: !Ref LabVPC
+      CidrBlock: !Ref LabVPCPublicSubnetCIDR
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: us-west-2a
+      Tags:
+        - Key: Name
+          Value: DATech-VPC Public Subnet
+  
+  LabPrivSubnet1:
+    Type: 'AWS::EC2::Subnet'
+    DependsOn: LabVPCAttachGateway
+    Properties:
+      VpcId: !Ref LabVPC
+      CidrBlock: !Ref LabVPCPrivateSubnetCIDR1
+      AvailabilityZone: us-west-2a
+      Tags:
+        - Key: Name
+          Value: DATech-VPC Private Subnet 1
+  
+  LabPubRT:
+    Type: 'AWS::EC2::RouteTable'
+    DependsOn: LabVPCAttachGateway
+    Properties:
+      VpcId: !Ref LabVPC
+      Tags:
+        - Key: Name
+          Value: DATech-VPC Public Route Table  
+  
+  LabPrivRT:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref LabVPC
+      Tags:
+        - Key: Name
+          Value: DATech-VPC Private Route Table  
+  
+  LabPublicRoute:
+    Type: 'AWS::EC2::Route'
+    DependsOn: LabVPCAttachGateway
+    Properties:
+      RouteTableId: !Ref LabPubRT
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref LabIGW
+  
+  LabPublicSubnetRouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    DependsOn: LabVPCAttachGateway
+    Properties:
+      SubnetId: !Ref LabPubSubnet
+      RouteTableId: !Ref LabPubRT
+  
+  LabPrivateSubnet1RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref LabPrivSubnet1
+      RouteTableId: !Ref LabPrivRT  
+  
+  LabVPCEndpointS3Gateway:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action:
+              - '*'
+            Resource:
+              - '*'
+      RouteTableIds: 
+        - !Ref LabPubRT
+        - !Ref LabPrivRT
+      ServiceName: 'com.amazonaws.us-west-2.s3'
+      VpcId: !Ref LabVPC
+  
+  LabVPCEndpointGlueInterface:
+    Type: 'AWS::EC2::VPCEndpoint'
+    Properties:
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action:
+              - '*'
+            Resource:
+              - '*'
+      SecurityGroupIds:
+        - !Ref RedshiftClusterSG
+      SubnetIds:
+        - !Ref LabPrivSubnet1
+      ServiceName: 'com.amazonaws.us-west-2.glue'
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      VpcId: !Ref LabVPC
+  
+  LabEIP:
+    Type: 'AWS::EC2::EIP'
+    DependsOn: LabVPCAttachGateway
+    Properties:
+      Domain: vpc
+  
+  LabNATGW:
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt LabEIP.AllocationId
+      SubnetId: !Ref LabPubSubnet
+  
+  LabPrivNATRoute:
+   Type: AWS::EC2::Route
+   Properties:
+      RouteTableId: !Ref LabPrivRT
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref LabNATGW
+  
+  #--------- Security Groups -------------
+  PsqlHostSG:
+    Type: 'AWS::EC2::SecurityGroup'
+    DependsOn: LabVPCAttachGateway
+    Properties:
+      GroupDescription: Security Group to access EC2 PSQL host
+      GroupName: !Join [ '-', ['PsqlHostSG', !Ref "AWS::AccountId", !Ref "AWS::Region"]]
+      VpcId: !Ref LabVPC
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: '0'
+          ToPort: '65535'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: udp
+          FromPort: '0'
+          ToPort: '65535'
+          CidrIp: 0.0.0.0/0
+  
+  RedshiftClusterSG:
+    Type: 'AWS::EC2::SecurityGroup'
+    DependsOn: LabVPCAttachGateway
+    Properties:
+      GroupDescription: Security Group for Redshift Cluster [rsclusternytaxi]
+      GroupName: !Join [ '-', ['RedshiftClusterSG', !Ref "AWS::AccountId", !Ref "AWS::Region"]]
+      VpcId: !Ref LabVPC
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: '0'
+          ToPort: '65535'
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: udp
+          FromPort: '0'
+          ToPort: '65535'
+          CidrIp: 0.0.0.0/0
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: '5439'
+          ToPort: '5439'
+          SourceSecurityGroupId: !GetAtt PsqlHostSG.GroupId
+  
+  RedshiftClusterSGIngressSelf:
+    Type: 'AWS::EC2::SecurityGroupIngress'
+    Properties:
+      IpProtocol: tcp
+      FromPort: '0'
+      ToPort: '65535'
+      Description: Self-reference ingress rule
+      SourceSecurityGroupId: !GetAtt RedshiftClusterSG.GroupId
+      GroupId: !GetAtt RedshiftClusterSG.GroupId
+  
+  #--------- Redshift -------------
+  LabRedshiftSubnetGroup:
+    Type: 'AWS::Redshift::ClusterSubnetGroup'
+    Properties:
+      Description: Subnet Group for Redshift cluster use at course Data Analytics (Technical)
+      SubnetIds:
+        - !Ref LabPrivSubnet1
+  
+  LabRedshiftCluster:
+    Type: 'AWS::Redshift::Cluster'
+    Properties:
+      ClusterIdentifier: !Ref RSClusterName
+      ClusterType: !Ref ClusterType
+      NumberOfNodes: !Ref NumberOfNodes
+      NodeType: !Ref NodeType
+      MasterUsername: !Ref MasterUsernameRS
+      MasterUserPassword: !Ref MasterUserPasswordRS
+      IamRoles:
+        - !GetAtt LabRSRole.Arn
+      VpcSecurityGroupIds:
+        - !Ref RedshiftClusterSG
+      ClusterSubnetGroupName: !Ref LabRedshiftSubnetGroup
+      PubliclyAccessible: 'false'
+      Port: !Ref PortNumber
+      DBName: !Ref DatabaseNameRS
+  
+  #--------- Glue ------------
+  GlueDATechDB:
+    Type: 'AWS::Glue::Database'
+    Properties:
+      CatalogId: !Ref "AWS::AccountId"
+      DatabaseInput: 
+        Name: !Ref GlueDATechDBName
+        Description: 'Database catalog for Redshift tables on [Data Analytics on AWS Tech] Lab course'
+  
+  GlueSpectrumDB:
+    Type: 'AWS::Glue::Database'
+    Properties:
+      CatalogId: !Ref "AWS::AccountId"
+      DatabaseInput: 
+        Name: !Ref GlueSpectrumDBName
+        Description: 'Database catalog for S3 tables on [Data Analytics on AWS Tech] Lab course'
+  
+  GlueRedshiftConnection:
+    Type: AWS::Glue::Connection
+    Properties: 
+      CatalogId: !Ref "AWS::AccountId"
+      ConnectionInput: 
+          ConnectionProperties:
+            JDBC_CONNECTION_URL: !Join [ '',['jdbc:redshift://', !GetAtt LabRedshiftCluster.Endpoint.Address , ':', !Ref PortNumber, '/', !Ref DatabaseNameRS]]
+            USERNAME: !Ref MasterUsernameRS
+            PASSWORD: !Ref MasterUserPasswordRS
+          ConnectionType: JDBC
+          Description: 'Redshift - NY Taxi data summarized'
+          Name: !Ref GlueRedshiftConnectionName
+          PhysicalConnectionRequirements: 
+              AvailabilityZone: !GetAtt LabPubSubnet.AvailabilityZone
+              SecurityGroupIdList: 
+                - !Ref RedshiftClusterSG
+              SubnetId: !Ref LabPubSubnet
+  
+  #--------- EC2 -------------
+  LabHost:
+    Type: 'AWS::EC2::Instance'
+    DependsOn: LabVPC
+    Properties:
+      ImageId: !Ref CustAMIId
+      InstanceType: t3.small
+      SubnetId: !Ref LabPubSubnet
+      IamInstanceProfile: !Ref LabEC2InstanceProfile
+      SecurityGroupIds:
+        - !Ref PsqlHostSG
+      Tags:
+        - Key: Name
+          Value: PSQL Host
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -ex
+          yum install postgresql -y
+          yum update -y
+          mkdir /home/ec2-user/bin
+          mkdir /home/ec2-user/pgcfg
+          mkdir /home/ec2-user/sql
+          mkdir /home/ec2-user/dataset
+          aws s3 cp s3://ee-assets-prod-us-east-1/modules/d1aca5a5b420414f8f8f91e36f802c9a/v3/rsload/ /home/ec2-user/dataset --recursive
+          aws s3 cp /home/ec2-user/dataset s3://${TempS3Bucket}/nytaxi/rsload/ --recursive
+          echo "${LabRedshiftCluster.Endpoint.Address}:${PortNumber}:${DatabaseNameRS}:${MasterUsernameRS}:${MasterUserPasswordRS}" > /home/ec2-user/pgcfg/pgpass.conf
+          echo "#!/bin/bash" > /home/ec2-user/bin/psql-redshift-datech-hol.sh
+          echo "export PGPASSFILE=/home/ec2-user/pgcfg/pgpass.conf" >> /home/ec2-user/bin/psql-redshift-datech-hol.sh
+          echo "export PGCLIENTENCODING=UTF8" >> /home/ec2-user/bin/psql-redshift-datech-hol.sh
+          echo "export PSQL_DIR=/usr/bin" >> /home/ec2-user/bin/psql-redshift-datech-hol.sh
+          echo "export PG_HOST=${LabRedshiftCluster.Endpoint.Address}" >> /home/ec2-user/bin/psql-redshift-datech-hol.sh
+          echo "\$PSQL_DIR/psql --host=\$PG_HOST --port=${PortNumber} --username=${MasterUsernameRS} --dbname=${DatabaseNameRS}" >> /home/ec2-user/bin/psql-redshift-datech-hol.sh
+          echo "/* Create table nytaxi */" > /home/ec2-user/sql/create_load_table_nytaxi.sql
+          echo "CREATE TABLE nytaxi (" >> /home/ec2-user/sql/create_load_table_nytaxi.sql
+          echo "    vendorid integer ENCODE az64," >> /home/ec2-user/sql/create_load_table_nytaxi.sql
+          echo "    pickup_datetime timestamp without time zone ENCODE az64," >> /home/ec2-user/sql/create_load_table_nytaxi.sql
+          echo "    dropoff_datetime timestamp without time zone ENCODE az64," >> /home/ec2-user/sql/create_load_table_nytaxi.sql
+          echo "    store_and_fwd_flag character(1) ENCODE lzo," >> /home/ec2-user/sql/create_load_table_nytaxi.sql
+          echo "    ratecodeid integer ENCODE az64," >> /home/ec2-user/sql/create_load_table_nytaxi.sql
+          echo "    pulocationid integer ENCODE az64," >> /home/ec2-user/sql/create_load_table_nytaxi.sql
+          echo "    dolocationid integer ENCODE az64," >> /home/ec2-user/sql/create_load_table_nytaxi.sql
+          echo "    passenger_count integer ENCODE az64," >> /home/ec2-user/sql/create_load_table_nytaxi.sql
+          echo "    trip_distance numeric(10,2) ENCODE az64," >> /home/ec2-user/sql/create_load_table_nytaxi.sql
+          echo "    fare_amount numeric(10,2) ENCODE az64," >> /home/ec2-user/sql/create_load_table_nytaxi.sql
+          echo "    extra numeric(10,2) ENCODE az64," >> /home/ec2-user/sql/create_load_table_nytaxi.sql
+          echo "    mta_tax numeric(10,2) ENCODE az64," >> /home/ec2-user/sql/create_load_table_nytaxi.sql
+          echo "    tip_amount numeric(10,2) ENCODE az64," >> /home/ec2-user/sql/create_load_table_nytaxi.sql
+          echo "    tolls_amount numeric(10,2) ENCODE az64," >> /home/ec2-user/sql/create_load_table_nytaxi.sql
+          echo "    ehail_fee character varying(10) ENCODE lzo," >> /home/ec2-user/sql/create_load_table_nytaxi.sql
+          echo "    improvement_surcharge numeric(10,2) ENCODE az64," >> /home/ec2-user/sql/create_load_table_nytaxi.sql
+          echo "    total_amount numeric(15,2) ENCODE az64," >> /home/ec2-user/sql/create_load_table_nytaxi.sql
+          echo "    payment_type integer ENCODE az64," >> /home/ec2-user/sql/create_load_table_nytaxi.sql
+          echo "    trip_type integer ENCODE az64," >> /home/ec2-user/sql/create_load_table_nytaxi.sql
+          echo "    congestion_surcharge numeric(10,2) ENCODE az64" >> /home/ec2-user/sql/create_load_table_nytaxi.sql
+          echo ")" >> /home/ec2-user/sql/create_load_table_nytaxi.sql
+          echo "DISTSTYLE AUTO;" >> /home/ec2-user/sql/create_load_table_nytaxi.sql
+          echo " " >> /home/ec2-user/sql/create_load_table_nytaxi.sql
+          echo "/* Load data from S3 assets bucket to table nytaxi */" >> /home/ec2-user/sql/create_load_table_nytaxi.sql
+          echo "COPY nytaxi" >> /home/ec2-user/sql/create_load_table_nytaxi.sql
+          echo "    FROM 's3://${TempS3Bucket}/nytaxi/rsload/nytaxi_'" >> /home/ec2-user/sql/create_load_table_nytaxi.sql
+          echo "    IAM_ROLE '${LabRSRole.Arn}';" >> /home/ec2-user/sql/create_load_table_nytaxi.sql
+          echo " " >> /home/ec2-user/sql/create_load_table_nytaxi.sql
+          echo "/* Colect statistics for table nytaxi */" >> /home/ec2-user/sql/create_load_table_nytaxi.sql
+          echo "ANALYZE nytaxi;" >> /home/ec2-user/sql/create_load_table_nytaxi.sql
+          echo "#!/bin/bash" > /home/ec2-user/bin/psql-redshift-load-data.sh
+          echo "export PGPASSFILE=/home/ec2-user/pgcfg/pgpass.conf" >> /home/ec2-user/bin/psql-redshift-load-data.sh
+          echo "export PGCLIENTENCODING=UTF8" >> /home/ec2-user/bin/psql-redshift-load-data.sh
+          echo "export PSQL_DIR=/usr/bin" >> /home/ec2-user/bin/psql-redshift-load-data.sh
+          echo "export PG_HOST=${LabRedshiftCluster.Endpoint.Address}" >> /home/ec2-user/bin/psql-redshift-load-data.sh
+          echo "\$PSQL_DIR/psql --host=\$PG_HOST --port=${PortNumber} --username=${MasterUsernameRS} --dbname=${DatabaseNameRS} --file=/home/ec2-user/sql/create_load_table_nytaxi.sql" >> /home/ec2-user/bin/psql-redshift-load-data.sh
+          chown ec2-user:ec2-user -R /home/ec2-user/*
+          chmod 600 /home/ec2-user/pgcfg/pgpass.conf
+          chmod +x /home/ec2-user/bin/psql-redshift-datech-hol.sh
+          chmod +x /home/ec2-user/bin/psql-redshift-load-data.sh
+          /home/ec2-user/bin/psql-redshift-load-data.sh
+
+Outputs:
+  
+  LabRSRole:
+    Value: !GetAtt LabRSRole.Arn
+    Description: Redshift Service Role ARN
+  
+  LabGlueRole:
+    Value: !Ref LabGlueRole
+    Description: Glue Service Role name
+  
+  TempS3Bucket:
+    Value: !Ref TempS3Bucket
+    Description: The name of the temporary bucket used by Redshift.
+    
+  DatalakeS3Bucket:
+    Value: !Ref DatalakeS3Bucket
+    Description: The name of the Data Lake bucket used by AWS Glue.
