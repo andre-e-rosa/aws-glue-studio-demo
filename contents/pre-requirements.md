@@ -76,14 +76,54 @@ The final script will be similar to the one below:
 > - Below you can see this **Glue Connection** definition:   
 > ![Glue Connection Redshift](/assets/images/12-aws-glue-connection-redshift.png)   
 5. In the form opened to you, follow the instructions inside each step below, in order, filling the specified fields with related values (the other fields not mentioned, let them with default values):   
-- **Step 1: Set crawler properties**   
+---
+- **Step 1: Set crawler properties**
+
 | Field        | Value       |
 |--------------|-------------|
 | Crawler name | `RSCrawler` |
+
 Click on **Next** button.   
+
 - **Step 2: Choose data sources and classifiers**
 
+At **Data sources** section, click on **Add a data source** and fill this information in the opened form:
 
+|     Field    |        Value         |
+|--------------|----------------------|
+| Data source  | `JDBC`               |
+| Connection   | `redshift-ny-taxi`   |
+| Include path | `dbdw/public/nytaxi` |
 
+The filled form should look like this:
 
+![AWS Glue Crawler Data Source](/assets/images/13-aws-glue-crawler-data-source.png)
+
+Click on **Add a JDBC data source** button.
+
+Click on **Next** button.
+
+- **Step 3: Configure security settings**
+
+|   Field  |                                                           Value                                                                |
+|----------|--------------------------------------------------------------------------------------------------------------------------------|
+| IAM role | Choose the one which has a name associated with the value of parameter `LabGlueRole`, obtained from **CloudFormation** outputs |
+
+Click on **Next** button.
+
+- **Step 4: Set output and scheduling**
+
+|      Field      |     Value       |
+|-----------------|-----------------|
+| Target database | `datechdb`      |
+| Frequency       | `Run on demand` |
+
+Click on **Next** button.
+
+- **Step 5: Review and create**
+
+Review the information you filled to create the Crawler. If everything is fine, click on Create crawler button.
+
+---
+6. You'll be redirected to the ***Crawlers*** panel. Check mark the crawler `RSCrawler` from the list and click on **Run** button:
 
