@@ -27,6 +27,7 @@ After configuring the previous prerequisites, follow these steps:
 
 > :memo: **Note:**    
 > Let this **AWS CloudShell** tab opened in your browser. You're going to use it later during the *Demo*.
+
 7. In the opened **AWS CloudShell** prompt, using **AWS CLI**, configure the credentials of the **IAM** user created for this *Demo*, with the needed privileges. Visit the documentation to know how to quickly [configure basic settings (security credentials, default output format, and the default AWS Region)](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-quickstart.html).
 
 ### Deploy the *Demo* architecture
@@ -34,11 +35,12 @@ After configuring the previous prerequisites, follow these steps:
 Follow the below steps to deploy this *Demo*:
 1. In the same **AWS CloudShell** prompt,  download the solution artifacts from this GitHub repository:   
 ```bash
+cd ~
 git clone https://github.com/andre-e-rosa/aws-glue-studio-demo.git
 ```
 2. Move to the bash scripts directory:   
 ```bash
-cd aws-glue-studio-demo/scripts/bash
+cd ~/aws-glue-studio-demo/scripts/bash
 ```   
 3. Run the following bash script, to deploy and setup the *Demo*:
 ```bash
@@ -122,8 +124,34 @@ Click on **Next** button.
 
 - **Step 5: Review and create**
 
-Review the information you filled to create the Crawler. If everything is fine, click on Create crawler button.
+Review the information you filled to create the ***Crawler***. If everything is fine, click on **Create crawler** button.
 
 ---
 6. You'll be redirected to the ***Crawlers*** panel. Check mark the crawler `RSCrawler` from the list and click on **Run** button:
 
+![AWS Glue Crawler run](/assets/images/14-aws-glue-crawler-run.png)
+
+7. Verify the crawler progress in this panel. Confirm when it reached the *Succeeded* status and it found 1 table created, stated in the column **Table changes from last run**, like in the below example:
+
+![AWS Glue Crawler succeeded](/assets/images/15-aws-glue-crawler-succeeded.png)
+
+> :memo: **Note:**    
+> This task can take around **5 minutes**, until reaching the *Succeeded* status.
+
+8. At the left panel in the **AWS Glue** Dashboard, select the option ***Databases***. You should see a database named `datechdb` in the list, like in the below example. Click on this database's name:
+
+![AWS Glue Data Catalog database datechdb](/assets/images/16-aws-glue-data-catalog-database-datechdb.png)
+
+9. In the form opened, page down until reach ***Tables*** section. You should see a table named `bdw_public_nytaxi` in the list, like in the below example. Click on this table's name:
+
+![AWS Glue Data Catalog datechdb table](/assets/images/17-aws-glue-data-catalog-datechdb-table.png)
+
+10. In the table definition panel showed to you, you can see the table details, for example:
+- The source of its definition, which is **Redshift** (***Classification*** field),
+- The database an schema where this table is created inside **Redshift** (***Location*** field).
+
+![AWS Glue Data Catalog datechdb table definition](/assets/images/18-aws-glue-data-catalog-datechdb-table-definition.png)
+
+Additionally, in the bottom section, you can see the schema definition of this table inside **Glue Data Catalog**:
+
+![AWS Glue Data Catalog datechdb table schema](/assets/images/19-aws-glue-data-catalog-datechdb-table-schema.png)
