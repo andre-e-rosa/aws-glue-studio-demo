@@ -6,7 +6,7 @@ An [**Amazon Redshift**](https://aws.amazon.com/redshift/) cluster can hold peta
 
 After unloading this oldest data to the *Data Lake* and removing it from the *Data Warehouse*, you can execute queries joining data from both **Redshift** and **S3**, using [**Redshift Spectrum**](https://docs.aws.amazon.com/redshift/latest/dg/c-using-spectrum.html) to achieve this goal.
 
-In this *DEMO*, we'll move historic data from **Redshift** and **S3** and create an aggregated *VIEW* covering both data sources. It uses a publicly available New York Green taxi rides dataset from years **2018**, **2019**, and **2020**, originally supplied in *CSV* format, which was loaded to a **Redshift** cluster. This dataset is available in the [NYC Taxi & Limousine Commission trip record data](https://www1.nyc.gov/site/tlc/about/tlc-trip-record-data.page) site.
+In this *DEMO*, we'll move historic data from **Redshift** to **S3** and create an aggregated *VIEW* covering both data sources. It uses a publicly available New York Green taxi rides dataset from years **2018**, **2019**, and **2020**, originally supplied in *CSV* format, which was loaded to a **Redshift** cluster. This dataset is available in the [NYC Taxi & Limousine Commission trip record data](https://www1.nyc.gov/site/tlc/about/tlc-trip-record-data.page) site.
 
 The main motivations for this approach are the following:   
 - Reduce storage cost, moving historic data to **S3** (transparently), and releasing storage space on **Redshift** cluster.
