@@ -250,4 +250,222 @@ Now, expand the section ***Advanced properties***. In the new opened panel, fill
 
 ![AWS Glue Data Catalog S3 location](/assets/images/41-aws-glue-data-catalog-s3-location.png)
 
+
 ### Part 03 - Query both Data Warehouse (Redshift) and Data Lake (S3) with Redshift Spectrum
+
+1. Move back to the **AWS CloudShell** session opened. Hit any key to recall the session.
+
+![AWS CloudShell reload](/assets/images/42-aws-cloudshell-reload.png)
+
+2. Call the following shell script:
+
+```bash
+psql-host-rmshell.sh
+```
+
+You should get connected to the ***PSQL Host*** bastion instance:
+
+![AWS CloudShell call PSQL Host](/assets/images/20-aws-cloudshell-call-psql-host.png)
+
+3. Call the following bash script, to connect to the **Redshift** cluster with the ***psql*** client:
+
+```bash
+psql-redshift-datech-hol.sh
+```
+
+![AWS CloudShell call PSQL Redshift](/assets/images/21-aws-cloudshell-call-psql-redshift.png)
+
+4. Create an external schema for **Redshift Spectrum**, pointing to `spectrumdb` database at **Glue Data Catalog**:
+
+```sql
+CREATE EXTERNAL SCHEMA spectrum
+    FROM DATA CATALOG
+    DATABASE 'spectrumdb' 
+    IAM_ROLE '<value of parameter "LabRSDMSRole", obtained from CloudFormation outputs>'
+    CREATE EXTERNAL DATABASE IF NOT EXISTS;
+```
+> :warning: **Warning:**    
+> Remember to fill the *IAM_ROLE* parameter with the value of parameter `LabRSDMSRole`, obtained from **CloudFormation** outputs. 
+
+5. Confirm the external schema is available and you have visibility of its tables, running below *SQL* queries:
+
+```sql
+select schemaname, databasename, esoptions from svv_external_schemas;
+```
+
+```sql
+select schemaname, tablename, location from svv_external_tables;
+```
+
+6. Verify the periods of data inside the *Data Lake* (table `spectrum.nytaxi`):
+
+```sql
+SELECT
+    EXTRACT(year FROM pickup_datetime) pickup_year,
+    EXTRACT(month FROM pickup_datetime) pickup_month,
+    COUNT(*) total_taxi_rides
+    FROM spectrum.nytaxi
+    GROUP BY 
+        EXTRACT(year FROM pickup_datetime),
+        EXTRACT(month FROM pickup_datetime)
+    ORDER BY 1, 2;
+```
+
+You should get a result similar to this one:
+
+```
+pickup_year | pickup_month | total_taxi_rides 
+-------------+--------------+------------------
+        2018 |            1 |           793395
+        2018 |            2 |           769804
+        2018 |            3 |           836963
+        2018 |            4 |           800120
+        2018 |            5 |           797282
+        2018 |            6 |           739351
+        2018 |            7 |           684442
+        2018 |            8 |           666324
+        2018 |            9 |           666626
+        2018 |           10 |           710482
+        2018 |           11 |           656594
+        2018 |           12 |           685389
+        2019 |            1 |           630889
+        2019 |            2 |           575678
+        2019 |            3 |           601071
+        2019 |            4 |           514392
+        2019 |            5 |           504898
+        2019 |            6 |           471038
+        2019 |            7 |           470712
+        2019 |            8 |           449693
+        2019 |            9 |           449015
+        2019 |           10 |           476385
+        2019 |           11 |           449506
+        2019 |           12 |           450602
+(24 rows)
+```
+
+7. Now we know these periods are saved in the *Data Lake*, lets delete those periods from **Redshift** cluster:
+
+```sql
+DELETE
+    FROM nytaxi
+    WHERE
+        EXTRACT(year FROM pickup_datetime) in (2018, 2019);
+```
+
+8. Verify the remaining amount of taxi rides in the local table:
+
+```sql
+SELECT
+    EXTRACT(year FROM pickup_datetime) pickup_year,
+    EXTRACT(month FROM pickup_datetime) pickup_month,
+    COUNT(*) total_taxi_rides
+    FROM nytaxi
+    GROUP BY 
+        EXTRACT(year FROM pickup_datetime),
+        EXTRACT(month FROM pickup_datetime)
+    ORDER BY 1, 2;
+```
+
+You should get a result similar to this one:
+
+```
+pickup_year | pickup_month | total_taxi_rides 
+-------------+--------------+------------------
+        2020 |            1 |           447757
+        2020 |            2 |           398647
+        2020 |            3 |           223403
+        2020 |            4 |            35610
+        2020 |            5 |            57360
+        2020 |            6 |            63110
+        2020 |            7 |            72254
+        2020 |            8 |            81064
+        2020 |            9 |            87981
+        2020 |           10 |            95115
+        2020 |           11 |            88611
+        2020 |           12 |            83128
+(12 rows)
+```
+
+9. Create a view which joins the amount of taxi rides per year and month, together with other statistics, from both the *Data Warehouse* and the *Data Lake*:
+
+```sql
+CREATE VIEW vw_agg_taxi_data_year_month AS 
+    SELECT
+        EXTRACT(year FROM pickup_datetime) pickup_year,
+        EXTRACT(month FROM pickup_datetime) pickup_month,
+        'Data Warehouse' data_source,
+        COUNT(*) total_taxi_rides,
+        SUM(passenger_count) total_passenger_count,
+        SUM(trip_distance) total_trip_distance,
+        SUM(total_amount) grand_total_amount
+        FROM public.nytaxi
+        GROUP BY 
+            EXTRACT(year FROM pickup_datetime),
+            EXTRACT(month FROM pickup_datetime)
+    UNION
+    SELECT
+        EXTRACT(year FROM pickup_datetime) pickup_year,
+        EXTRACT(month FROM pickup_datetime) pickup_month,
+       'Data Lake' data_source,
+        COUNT(*) total_taxi_rides,
+        SUM(passenger_count) total_passenger_count,
+        SUM(trip_distance) total_trip_distance,
+        SUM(total_amount) grand_total_amount
+        FROM spectrum.nytaxi
+        GROUP BY 
+            EXTRACT(year FROM pickup_datetime),
+            EXTRACT(month FROM pickup_datetime)
+    WITH NO SCHEMA BINDING;
+```
+
+10.	Query the view to see statistics per year and month from both the *Data Warehouse* and the *Data Lake*:
+
+```sql
+SELECT * FROM vw_agg_taxi_data_year_month ORDER BY 1, 2, 3;
+```
+
+You should get a result similar to this one:
+
+```
+pickup_year | pickup_month |  data_source   | total_taxi_rides | total_passenger_count | total_trip_distance | grand_total_amount 
+-------------+--------------+----------------+------------------+-----------------------+---------------------+--------------------
+        2018 |            1 | Data Lake      |           793395 |               1081087 |          2114886.46 |        11110967.02
+        2018 |            2 | Data Lake      |           769804 |               1044116 |          2097898.98 |        10897547.28
+        2018 |            3 | Data Lake      |           836963 |               1139564 |          2455376.15 |        12476814.98
+        2018 |            4 | Data Lake      |           800120 |               1092038 |          2471875.84 |        12386260.11
+        2018 |            5 | Data Lake      |           797282 |               1082894 |          2570250.74 |        12831150.95
+        2018 |            6 | Data Lake      |           739351 |               1003943 |          2438962.35 |        12016412.75
+        2018 |            7 | Data Lake      |           684442 |                928883 |          2263131.02 |        10968526.52
+        2018 |            8 | Data Lake      |           666324 |                897922 |          2255660.48 |        10792937.31
+        2018 |            9 | Data Lake      |           666626 |                895398 |          2298604.04 |        11101968.39
+        2018 |           10 | Data Lake      |           710482 |                948001 |          2454143.07 |        11898708.07
+        2018 |           11 | Data Lake      |           656594 |                876186 |          2267062.37 |        10993946.39
+        2018 |           12 | Data Lake      |           685389 |                904395 |          2355654.37 |        11238890.56
+        2019 |            1 | Data Lake      |           630889 |                831528 |          2169691.87 |        10140171.90
+        2019 |            2 | Data Lake      |           575678 |                752132 |          2018196.28 |         9662463.75
+        2019 |            3 | Data Lake      |           601071 |                781857 |          2076834.24 |        10054391.85
+        2019 |            4 | Data Lake      |           514392 |                675610 |          1542060.63 |         8081204.58
+        2019 |            5 | Data Lake      |           504898 |                659812 |          1503947.17 |         8142067.25
+        2019 |            6 | Data Lake      |           471038 |                620831 |          1402727.60 |         7608786.79
+        2019 |            7 | Data Lake      |           470712 |                566897 |          1562935.05 |         8198580.40
+        2019 |            8 | Data Lake      |           449693 |                520139 |          1566424.01 |         8177079.99
+        2019 |            9 | Data Lake      |           449015 |                511488 |          1580562.17 |         8362434.07
+        2019 |           10 | Data Lake      |           476385 |                506325 |          1688113.78 |         9045157.92
+        2019 |           11 | Data Lake      |           449506 |                476773 |          1300107.21 |         8409243.44
+        2019 |           12 | Data Lake      |           450602 |                472012 |          1552374.78 |         8442973.95
+        2020 |            1 | Data Warehouse |           447757 |                432588 |          1611669.73 |         8462139.37
+        2020 |            2 | Data Warehouse |           398647 |                416454 |          1957235.06 |         7376904.68
+        2020 |            3 | Data Warehouse |           223403 |                230149 |          1583157.85 |         3733688.46
+        2020 |            4 | Data Warehouse |            35610 |                 27434 |           334407.88 |          700990.79
+        2020 |            5 | Data Warehouse |            57360 |                 36938 |          2167916.17 |         1225120.75
+        2020 |            6 | Data Warehouse |            63110 |                 47702 |          2893106.85 |         1450810.72
+        2020 |            7 | Data Warehouse |            72254 |                 53377 |          5635416.05 |         1750426.72
+        2020 |            8 | Data Warehouse |            81064 |                 59517 |          4410958.31 |         2001451.55
+        2020 |            9 | Data Warehouse |            87981 |                 62928 |          1137944.88 |         2069133.92
+        2020 |           10 | Data Warehouse |            95115 |                 68923 |          2575670.69 |         2196720.48
+        2020 |           11 | Data Warehouse |            88611 |                 62515 |          3556182.09 |         2062696.09
+        2020 |           12 | Data Warehouse |            83128 |                 58750 |          2121953.07 |         1933814.43
+(36 rows)
+```
+
+11. Using **Redshift Spectrum**, we were able to query data from both our *Data Warehouse* and *Data Lake*, after migrating historical data from the first data store to the other one. This migration was possible thanks to the *ETL* job we created in a visual, fast and easy way using **AWS Glue Studio**!
