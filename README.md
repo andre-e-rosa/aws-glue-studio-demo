@@ -14,7 +14,7 @@ The main motivations for this approach are the following:
 
 ![AWS Glue Studio Demo - solution & motivation](assets/images/00a-solution-and-motivations.png)
 
-To do this data movement, you will learn how to do that with an [**AWS Glue**](https://aws.amazon.com/glue/) *ETL* job, which will be created visually using [**AWS Glue Studio**](https://docs.aws.amazon.com/glue/latest/ug/what-is-glue-studio.html).
+For this data movement, you will learn how to do that with an [**AWS Glue**](https://aws.amazon.com/glue/) *ETL* job, which will be created visually using [**AWS Glue Studio**](https://docs.aws.amazon.com/glue/latest/ug/what-is-glue-studio.html).
 
 ![AWS Glue Studio Demo - workflow](assets/images/00b-solution-workflow.png)
 
