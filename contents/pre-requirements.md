@@ -52,6 +52,9 @@ chmod +x *.sh
 
 The content of this script can be visualized in [this link](/scripts/bash/deploy-demo.sh).
 
+> :memo: **Note:**    
+> This setup can take around **5 minutes**.
+
 4. When the deployment finishes, an [AWS CloudFormation](https://aws.amazon.com/cloudformation/) stack is created. Open this service in the first browser tab with the **AWS Management Console** already opened:   
 ![AWS CloudFormation open](/assets/images/07-aws-cloudformation-open.png)
 5. Select the stack named **aws-glue-studio-demo**. Then, select the ***Outputs*** tab. Take note of all these parameters, as they will be used throughout the *Demo*:   
@@ -148,13 +151,13 @@ Review the information you filled to create the ***Crawler***. If everything is 
 
 ![AWS Glue Data Catalog database datechdb](/assets/images/16-aws-glue-data-catalog-database-datechdb.png)
 
-9. In the form opened, page down until reach ***Tables*** section. You should see a table named `bdw_public_nytaxi` in the list, like in the below example. Click on this table's name:
+9. In the form opened, page down until reach ***Tables*** section. You should see a table named `dbdw_public_nytaxi` in the list, like in the below example. Click on this table's name:
 
 ![AWS Glue Data Catalog datechdb table](/assets/images/17-aws-glue-data-catalog-datechdb-table.png)
 
 10. In the table definition panel showed to you, you can see the table details, for example:
 - The source of its definition, which is **Redshift** (***Classification*** field),
-- The database an schema where this table is created inside **Redshift** (***Location*** field).
+- The database and schema where this table is created inside **Redshift** (***Location*** field).
 
 ![AWS Glue Data Catalog datechdb table definition](/assets/images/18-aws-glue-data-catalog-datechdb-table-definition.png)
 
