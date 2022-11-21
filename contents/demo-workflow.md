@@ -144,7 +144,7 @@ pickup_year | pickup_month | total_taxi_rides
 | Database                                      | `datechdb`                                                     |
 | Table                                         | `dbdw_public_nytaxi`                                           |
 | Temporary directory                           | `s3://<value of CloudFormation output "TempS3Bucket">/nytaxi/` |
-| IAM role associated with the Redshift cluster | select the one which starts with name `LabRSDMSRole`           |
+| IAM role associated with the Redshift cluster | select the one which starts with name `LabRSRole`              |
 
 The final result should be similar to the below example:
 
