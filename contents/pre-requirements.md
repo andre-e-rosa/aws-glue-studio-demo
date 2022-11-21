@@ -46,6 +46,9 @@ cd ~/aws-glue-studio-demo/scripts/bash
 ```bash
 ./deploy-demo.sh
 ```
+
+The content of this script can be visualized in [this link](/scripts/bash/deploy-demo.sh).
+
 4. When the deployment finishes, an [AWS CloudFormation](https://aws.amazon.com/cloudformation/) stack is created. Open this service in the first browser tab with the **AWS Management Console** already opened:   
 ![AWS CloudFormation open](/assets/images/07-aws-cloudformation-open.png)
 5. Select the stack named **aws-glue-studio-demo**. Then, select the ***Outputs*** tab. Take note of all these parameters, as they will be used throughout the *Demo*:   
