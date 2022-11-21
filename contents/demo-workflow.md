@@ -281,11 +281,11 @@ psql-redshift-datech-hol.sh
 CREATE EXTERNAL SCHEMA spectrum
     FROM DATA CATALOG
     DATABASE 'spectrumdb' 
-    IAM_ROLE '<value of parameter "LabRSDMSRole", obtained from CloudFormation outputs>'
+    IAM_ROLE '<value of parameter "LabRSRole", obtained from CloudFormation outputs>'
     CREATE EXTERNAL DATABASE IF NOT EXISTS;
 ```
 > :warning: **Warning:**    
-> Remember to fill the *IAM_ROLE* parameter with the value of parameter `LabRSDMSRole`, obtained from **CloudFormation** outputs. 
+> Remember to fill the *IAM_ROLE* parameter with the value of parameter `LabRSRole`, obtained from **CloudFormation** outputs. 
 
 5. Confirm the external schema is available and you have visibility of its tables, running below *SQL* queries:
 
