@@ -38,12 +38,9 @@ Follow the below steps to deploy this *Demo*:
 cd ~
 git clone https://github.com/andre-e-rosa/aws-glue-studio-demo.git
 ```
-2. Move to the bash scripts directory and change the *execute* attribute of them, to make them self-executable:   
+2. Move to the bash scripts directory:   
 ```bash
 cd ~/aws-glue-studio-demo/scripts/bash
-```   
-```bash
-chmod +x *.sh
 ```   
 3. Run the following bash script, to deploy and setup the *Demo*:
 ```bash
