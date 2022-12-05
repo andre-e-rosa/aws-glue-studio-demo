@@ -9,8 +9,11 @@ After running this *Demo*, and to avoid unnecessary charges (storage and computi
 2. Move to the directory where the bash scripts were deployed:
 
 ```bash
-cd ~/aws-glue-studio-demo/scripts/bash
+cd <cloned repository path>/aws-glue-studio-demo/scripts/bash
 ```
+
+> :memo: **Note:**    
+> Change the value of `<cloned repository path>` to the name of the directory where you cloned this Demo from **GitHub**.
 
 3. Then, run this bash script, to delete the *Demo* stack:
 

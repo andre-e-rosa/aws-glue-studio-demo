@@ -35,12 +35,11 @@ After configuring the previous prerequisites, follow these steps:
 Follow the below steps to deploy this *Demo*:
 1. In the same **AWS CloudShell** prompt,  download the solution artifacts from this GitHub repository:   
 ```bash
-cd ~
 git clone https://github.com/andre-e-rosa/aws-glue-studio-demo.git
 ```
 2. Move to the bash scripts directory:   
 ```bash
-cd ~/aws-glue-studio-demo/scripts/bash
+cd ./aws-glue-studio-demo/scripts/bash
 ```   
 3. Run the following bash script, to deploy and setup the *Demo*:
 ```bash
